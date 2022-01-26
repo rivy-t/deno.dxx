@@ -1,0 +1,5 @@
+# NOTE: GLOBSTAR syntax [see `git help gitignore`]
+# * ref: [.gitignore] http://git-scm.com/docs/gitignore @@ http://archive.is/Rk6rO
+
+# ignore coverage data
+[._#]coverage
