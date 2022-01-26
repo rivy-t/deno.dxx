@@ -1,10 +1,11 @@
 name: CICD
 
 # spell-checker:ignore (acronyms) CICD MSVC musl
-# spell-checker:ignore (env/flags) Awarnings Ccodegen Coverflow Cpanic RUSTDOCFLAGS RUSTFLAGS Zpanic
+# spell-checker:ignore (env/flags) Awarnings BASHOPTS Ccodegen Coverflow Cpanic RUSTDOCFLAGS RUSTFLAGS Zpanic
 # spell-checker:ignore (jargon) SHAs deps softprops toolchain
-# spell-checker:ignore (names) CodeCOV MacOS MinGW Peltoche rivy
-# spell-checker:ignore (shell/tools) choco clippy dmake dpkg esac fakeroot gmake grcov halium lcov libssl mkdir popd printf pushd rustc rustfmt rustup shopt xargs
+# spell-checker:ignore (names) CodeCOV Cygwin Deno DenoLand MacOS MinGW
+# spell-checker:ignore (people) Roy Ivy III * rivy
+# spell-checker:ignore (shell/tools) choco clippy dmake dpkg esac fakeroot gmake grcov halium lcov libssl mapfile mkdir popd printf pushd rustc rustfmt rustup shopt xargs
 # spell-checker:ignore (misc) aarch alnum armhf bindir busytest coreutils gnueabihf issuecomment maint nullglob onexitbegin onexitend runtest tempfile testsuite uutils
 
 env:
@@ -12,11 +13,17 @@ env:
   PROJECT_DESC: 'Enhanced Deno commands'
   PROJECT_AUTH: 'rivy'
   DENO_MIN_VER: '1.0.0'
+  #
+  BIN_FILE_GLOB: './source/[^$]*.ts ./source/bin/*.ts ./source/cli/*.ts ./src/[^$]*.ts ./src/bin/*.ts ./src/cli/*.ts'
+  LIB_FILE_GLOB: './source/$mod.ts ./source/lib/$mod.ts ./src/lib/$mod.ts ./src/$mod.ts'
+  SRC_FILE_GLOB: './source/**/*.ts ./src/**/*.ts'
+  #
+  COMPILE_OPTIONS: '--allow-all --unstable'
 
 on: [push, pull_request]
 
 jobs:
-  code_deps:
+  style_deps:
     name: Style/dependencies
     runs-on: ${{ matrix.job.os }}
     strategy:
@@ -39,15 +46,16 @@ jobs:
         shell: bash
         run: |
           ## `deno cache` testing
-          # * src files to test (shell-quoted)
-          files=(./src/*.ts)
+          # * array of source files to test
+          files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
+          echo "[ files: ${files[@]} ]"
           for file in "${files[@]}"; do
             # * convert any warnings to GHA UI annotations; ref: <https://help.github.com/en/actions/reference/workflow-commands-for-github-actions#setting-a-warning-message>
             # * note: `perl -ne 's/\x1b\[[0-9;]*[A-Za-z]//gim; print'` removes ANSI escapes; ref: <https://stackoverflow.com/questions/17998978/removing-colors-from-output>
             S=$(deno cache "${file}" 2>&1) && printf "%s\n" "$S" || { printf "%s\n" "$S" ; printf "%s\n" "$S" | perl -ne 's/\x1b\[[0-9;]*[A-Za-z]//gim; print' | sed -E -n -e '/^error:/{' -e "N; s/^error:[[:space:]]+(.*)\n[[:space:]]+at file:[/][/]${PWD////\\/}[/](.*):([0-9]+):([0-9]+).*$/::error file=\2,line=\3::ERROR: \`deno cache\`: dependency missing (file:'\2', line:\3)/p" -e '}' ; exit 1 ; }
           done
 
-  code_format:
+  style_format:
     name: Style/format
     runs-on: ${{ matrix.job.os }}
     strategy:
@@ -72,7 +80,7 @@ jobs:
           # * note: `perl -ne 's/\x1b\[[0-9;]*[A-Za-z]//gim; print'` removes ANSI escapes; ref: <https://stackoverflow.com/questions/17998978/removing-colors-from-output>
           S=$(dprint check 2>&1) && printf "%s\n" "$S" || { printf "%s\n" "$S" | perl -ne 's/\x1b\[[0-9;]*[A-Za-z]//gim; print' | perl -ne 'BEGIN { $errs = q//; }; print; if (m/^Error\s+formatting\s+\Q$ENV{PWD}\E\/(.*).\s+Message/) { $errs .= qq{::error file=$1::ERROR: \`dprint check\`: formatting error (file:\x27$1\x27; correct the syntax error)\n}; $file = q{}; } ; $file = $1 if /^from\s+\Q$ENV{PWD}\E\/(.*):\s*$/; ($errs .= qq{::error file=$file,line=$1::ERROR: \`dprint check\`: style violation (file:\x27$file\x27, line:$1; use \`dprint fmt -- \x27$file\x27\`)\n}) if length($file) && m/^(\d+)\|/; END { print qq/$errs/; }' ; exit 1 ; }
 
-  code_lint:
+  style_lint:
     name: Style/lint
     runs-on: ${{ matrix.job.os }}
     strategy:
@@ -80,8 +88,8 @@ jobs:
       matrix:
         job:
           - { os: ubuntu-latest }
-          - { os: macos-latest }
-          - { os: windows-latest }
+          # - { os: macos-latest }
+          # - { os: windows-latest }
     steps:
       - uses: actions/checkout@v2
       - name: Install `deno` toolchain
@@ -94,7 +102,7 @@ jobs:
           # * note: `deno lint` returns UNC paths under WinOS (including Cygwin and MSys) requiring platform-specific PWD handling
           S=$(deno lint 2>&1) && printf "%s\n" "$S" || { printf "%s\n" "$S" | perl -ne 's/\x1b\[[0-9;]*[A-Za-z]//gim; print' | perl -ne 'BEGIN { $errs = q//; $_=$ENV{PWD}; if ($^O =~ m/Cygwin|MSWin32|MSys/i) { s#^/([A-Za-z])/#"//?/".uc($1).":/"#e; s#/#\\#g; } ; $PWD=$_; print qq{PWD=$PWD\n}; }; print; if (m/^Error\s+linting:\s+\Q$PWD\E[\\\/](.*)$/) { $errs .= qq{::error file=$1::ERROR: \`deno lint\`: linting error (file:\x27$1\x27; correct the syntax error)\n}; $file = q{}; } ; $error = $1 if /^([(].*)$/; ($errs .= qq{::error file=$1,line=$2::ERROR: \`deno lint\`: $error (file:\x27$1\x27, line:$2)\n}) if length($error) && m/\s*at\s+\Q$PWD\E[\\\/](.*):(\d+):\d+\s*$/; END { print qq/$errs/; }' ; exit 1 ; }
 
-  code_spellcheck:
+  style_spellcheck:
     name: Style/spelling
     runs-on: ${{ matrix.job.os }}
     strategy:
@@ -121,9 +129,11 @@ jobs:
       fail-fast: false
       matrix:
         job:
-          - { os: ubuntu-latest }
-          - { os: macos-latest }
-          - { os: windows-latest }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    outputs:
+      ARTIFACTS: ${{ steps.vars.outputs.ARTIFACTS }}
     steps:
       - uses: actions/checkout@v2
         with:
@@ -135,6 +145,14 @@ jobs:
           ## VARs setup
           outputs() { step_id="vars"; for var in "$@" ; do echo steps.${step_id}.outputs.${var}="${!var}"; echo ::set-output name=${var}::${!var}; done; }
           # ...
+          # produces artifacts?
+          unset ARTIFACTS
+          # * array of "binary" files
+          # mapfile -t files < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do echo "$v"; done)
+          files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
+          echo "[ files: ${files[@]} ]"
+          if [ -n "${files}" ]; then ARTIFACTS='true' ; fi
+          outputs ARTIFACTS
       - name: Install `deno` toolchain
         uses: denoland/setup-deno@v1
       - name: Info
@@ -143,14 +161,20 @@ jobs:
           ## Info
           # environment
           echo "## environment"
+          # ref: <https://www.baeldung.com/linux/find-current-shell> @@ <https://archive.is/poU3Z>
+          echo "SHELL='$(readlink /proc/$$/exe)'"
+          echo "BASH_VERSION='${BASH_VERSION}'"
+          echo "BASHOPTS='${BASHOPTS}'"
           echo "CI='${CI}'"
           # tooling info display
           echo "## tooling"
           deno --version
           # dependencies
           echo "## dependency list"
-          # * src files (shell-quoted)
-          files=(./src/*.ts)
+          # * array of "binary" and "library" source files
+          # mapfile -t files < <(shopt -s nullglob; x=(${BIN_FILE_GLOB} ${LIB_FILE_GLOB}); for v in "${x[@]}"; do echo "$v"; done)
+          files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${BIN_FILE_GLOB} ${LIB_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
+          echo "[ files: ${files[@]} ]"
           for file in "${files[@]}"; do
             deno info "${file}"
           done
@@ -159,3 +183,142 @@ jobs:
         run: |
           ## `deno test`
           deno test --allow-all
+
+  publish:
+    name: Publish
+    needs: Test
+    if: needs.Test.outputs.ARTIFACTS
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0 # pull full repository (enables `git` branch/describe operations and testing)
+      - name: Initialize workflow variables
+        id: vars
+        shell: bash
+        run: |
+          ## VARs setup
+          outputs() { step_id="vars"; for var in "$@" ; do echo steps.${step_id}.outputs.${var}="${!var}"; echo ::set-output name=${var}::${!var}; done; }
+          # ...
+          # staging directory
+          STAGING='.staging'
+          outputs STAGING
+          # determine EXE suffix
+          EXE_suffix="" ; case '${{ matrix.job.target }}' in *-pc-windows-*) EXE_suffix=".exe" ;; esac;
+          outputs EXE_suffix
+          # parse commit reference info
+          echo GITHUB_REF=${GITHUB_REF}
+          echo GITHUB_SHA=${GITHUB_SHA}
+          REF_NAME=${GITHUB_REF#refs/*/}
+          unset REF_BRANCH ; case "${GITHUB_REF}" in refs/heads/*) REF_BRANCH=${GITHUB_REF#refs/heads/} ;; esac;
+          unset REF_TAG ; case "${GITHUB_REF}" in refs/tags/*) REF_TAG=${GITHUB_REF#refs/tags/} ;; esac;
+          REF_SHAS=${GITHUB_SHA:0:8}
+          outputs REF_NAME REF_BRANCH REF_TAG REF_SHAS
+          # package name
+          PKG_suffix=".tar.gz" ; case '${{ matrix.job.target }}' in *-pc-windows-*) PKG_suffix=".zip" ;; esac;
+          PKG_BASENAME=${PROJECT_NAME}-${REF_TAG:-$REF_SHAS}-${{ matrix.job.target }}
+          PKG_NAME=${PKG_BASENAME}${PKG_suffix}
+          outputs PKG_suffix PKG_BASENAME PKG_NAME
+          # deployable tag? (ie, leading "vM" or "M"; M == version number)
+          unset DEPLOY ; if [[ $REF_TAG =~ ^[vV]?[0-9].* ]]; then DEPLOY='true' ; fi
+          outputs DEPLOY
+          # produces artifacts?
+          unset ARTIFACTS
+          # * array of "binary" files
+          # mapfile -t files < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do echo "$v"; done)
+          files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
+          echo "[ files: ${files[@]} ]"
+          if [ -n "${files}" ]; then ARTIFACTS='true' ; fi
+          outputs ARTIFACTS
+      - name: Create all needed build/work directories
+        # if: steps.vars.outputs.ARTIFACTS
+        shell: bash
+        run: |
+          ## Create build/work space
+          mkdir -p '${{ steps.vars.outputs.STAGING }}'
+          mkdir -p '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/bin'
+      - name: Install `deno` toolchain
+        # if: steps.vars.outputs.ARTIFACTS
+        uses: denoland/setup-deno@v1
+      - name: Info
+        if: steps.vars.outputs.ARTIFACTS
+        shell: bash
+        run: |
+          ## Info
+          # environment
+          echo "## environment"
+          # ref: <https://www.baeldung.com/linux/find-current-shell> @@ <https://archive.is/poU3Z>
+          echo "SHELL='$(readlink /proc/$$/exe)'"
+          echo "BASH_VERSION='${BASH_VERSION}'"
+          echo "BASHOPTS='${BASHOPTS}'"
+          echo "CI='${CI}'"
+          # tooling info display
+          echo "## tooling"
+          deno --version
+          # dependencies
+          echo "## dependency list"
+          # * array of source files
+          # mapfile -t files < <(shopt -s nullglob; x=(${SRC_FILE_GLOB}); for v in "${x[@]}"; do echo "$v"; done)
+          files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${SRC_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
+          echo "[ files: ${files[@]} ]"
+          for file in "${files[@]}"; do
+            deno info "${file}"
+          done
+      - name: Compile
+        # if: steps.vars.outputs.ARTIFACTS
+        shell: bash
+        run: |
+          ## Compile
+          # * array of "binary" files
+          # mapfile -t files < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do echo "$v"; done)
+          files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
+          echo "[ files: ${files[@]} ]"
+          for file in "${files[@]}"; do
+            name="${file##*/}"
+            basename="${name%%.*}"
+            target="${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/bin/${basename}${{ steps.vars.outputs.EXE_suffix }}"
+            echo "[ target='${target}' ]"
+            # NOTE: a duplicate basename will overwrite any earlier compilation
+            deno compile ${COMPILE_OPTIONS} -o "${target}" "${file}"
+          done
+      - name: Archive artifacts
+        # if: steps.vars.outputs.ARTIFACTS
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.PROJECT_NAME }}-${{ matrix.job.target }}
+          path: ${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/bin/*
+      - name: Package
+        # if: steps.vars.outputs.ARTIFACTS && steps.vars.outputs.DEPLOY
+        if: steps.vars.outputs.DEPLOY
+        shell: bash
+        run: |
+          ## Package artifact(s)
+          # # `strip` binary (if needed)
+          # if [ -n "${{ steps.vars.outputs.STRIP }}" ]; then "${{ steps.vars.outputs.STRIP }}" '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/${{ env.PROJECT_NAME }}${{ steps.vars.outputs.EXE_suffix }}' ; fi
+          # README and LICENSE
+          # * spell-checker:ignore EADME ICENSE
+          (shopt -s nullglob; for f in [R]"EADME"{,.*}; do cp $f '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/' ; done)
+          (shopt -s nullglob; for f in [L]"ICENSE"{-*,}{,.*}; do cp $f '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/' ; done)
+          # core compressed package
+          pushd '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}' >/dev/null
+          case '${{ matrix.job.target }}' in
+            *-pc-windows-*) 7z -y a '../${{ steps.vars.outputs.PKG_NAME }}' * | tail -2 ;;
+            *) tar czf '../${{ steps.vars.outputs.PKG_NAME }}' * ;;
+          esac
+          popd >/dev/null
+      - name: Publish
+        # if: steps.vars.outputs.ARTIFACTS && steps.vars.outputs.DEPLOY
+        if: steps.vars.outputs.DEPLOY
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_NAME }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
