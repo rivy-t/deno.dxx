@@ -29,6 +29,7 @@
 	"includes": ["**/*.{ts,tsx,js,jsx,cjs,mjs,json,md,mkd,rs,yaml,yml}"],
 	"excludes": [
 		".history",
+		".coverage",
 		".changelog/*.tpl.*",
 		"CHANGELOG{,.}*",
 		"**/node_modules",
