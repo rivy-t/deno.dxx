@@ -24,8 +24,8 @@ env:
 on: [push, pull_request]
 
 jobs:
-  style_deps:
-    name: Style/dependencies
+  style:
+    name: Style
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
@@ -41,12 +41,29 @@ jobs:
           ## VARs setup
           outputs() { step_id="vars"; for var in "$@" ; do echo steps.${step_id}.outputs.${var}="${!var}"; echo ::set-output name=${var}::${!var}; done; }
           # ...
-      - name: Install `deno` toolchain
-        uses: denoland/setup-deno@v1
-      - name: '`deno cache` testing'
+      - name: Install/setup prerequisites
         shell: bash
         run: |
-          ## `deno cache` testing
+          ## Install/setup prerequisites
+          # * pin installed cspell to v4.2.8 (cspell v5+ is broken for NodeJS < v12)
+          ## maint: [2021-11-10; rivy] `cspell` version may be advanced to v5 when used with NodeJS >= v12
+          sudo apt-get -y update ; sudo apt-get -y install npm ; sudo npm install cspell@4.2.8 -g ;
+      - name: Install `deno` toolchain
+        uses: denoland/setup-deno@v1
+      - name: Install `dprint`
+        shell: bash
+        run: |
+          curl -fsSL https://dprint.dev/install.sh | sh -s 0.15.0 > /dev/null 2>&1
+          echo '/home/runner/.dprint/bin' >> $GITHUB_PATH
+      - name: '[Style tests]'
+        shell: bash
+        run: |
+          true
+      - name: 'Dependency testing (`deno cache`)'
+        if: success() || failure() # run regardless of prior step success/failure
+        shell: bash
+        run: |
+          ## Dependency testing (`deno cache`)
           # * array of source files to test
           files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
           echo "[ files: ${files[@]} ]"
@@ -55,72 +72,27 @@ jobs:
             # * note: `perl -ne 's/\x1b\[[0-9;]*[A-Za-z]//gim; print'` removes ANSI escapes; ref: <https://stackoverflow.com/questions/17998978/removing-colors-from-output>
             S=$(deno cache "${file}" 2>&1) && printf "%s\n" "$S" || { printf "%s\n" "$S" ; printf "%s\n" "$S" | perl -ne 's/\x1b\[[0-9;]*[A-Za-z]//gim; print' | sed -E -n -e '/^error:/{' -e "N; s/^error:[[:space:]]+(.*)\n[[:space:]]+at file:[/][/]${PWD////\\/}[/](.*):([0-9]+):([0-9]+).*$/::error file=\2,line=\3::ERROR: \`deno cache\`: dependency missing (file:'\2', line:\3)/p" -e '}' ; exit 1 ; }
           done
-
-  style_format:
-    name: Style/format
-    runs-on: ${{ matrix.job.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        job:
-          - { os: ubuntu-latest }
-    steps:
-      - uses: actions/checkout@v2
-      # - uses: dprint/check@v1.5
-      # or, ...
-      - name: Install `dprint`
-        shell: bash
-        run: |
-          curl -fsSL https://dprint.dev/install.sh | sh -s 0.15.0 > /dev/null 2>&1
-          echo '/home/runner/.dprint/bin' >> $GITHUB_PATH
       - name: Format testing (`dprint check`)
+        if: success() || failure() # run regardless of prior step success/failure
         shell: bash
         run: |
           # Format testing (`dprint check`)
           # * convert any warnings to GHA UI annotations; ref: <https://help.github.com/en/actions/reference/workflow-commands-for-github-actions#setting-a-warning-message>
           # * note: `perl -ne 's/\x1b\[[0-9;]*[A-Za-z]//gim; print'` removes ANSI escapes; ref: <https://stackoverflow.com/questions/17998978/removing-colors-from-output>
           S=$(dprint check 2>&1) && printf "%s\n" "$S" || { printf "%s\n" "$S" | perl -ne 's/\x1b\[[0-9;]*[A-Za-z]//gim; print' | perl -ne 'BEGIN { $errs = q//; }; print; if (m/^Error\s+formatting\s+\Q$ENV{PWD}\E\/(.*).\s+Message/) { $errs .= qq{::error file=$1::ERROR: \`dprint check\`: formatting error (file:\x27$1\x27; correct the syntax error)\n}; $file = q{}; } ; $file = $1 if /^from\s+\Q$ENV{PWD}\E\/(.*):\s*$/; ($errs .= qq{::error file=$file,line=$1::ERROR: \`dprint check\`: style violation (file:\x27$file\x27, line:$1; use \`dprint fmt -- \x27$file\x27\`)\n}) if length($file) && m/^(\d+)\|/; END { print qq/$errs/; }' ; exit 1 ; }
-
-  style_lint:
-    name: Style/lint
-    runs-on: ${{ matrix.job.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        job:
-          - { os: ubuntu-latest }
-          # - { os: macos-latest }
-          # - { os: windows-latest }
-    steps:
-      - uses: actions/checkout@v2
-      - name: Install `deno` toolchain
-        uses: denoland/setup-deno@v1
-      - name: '`deno lint` testing'
+      - name: 'Lint testing (`deno lint`)'
+        if: success() || failure() # run regardless of prior step success/failure
         shell: bash
         run: |
-          ## `deno lint` lint testing
+          ## Lint testing (`deno lint`)
           # * convert any warnings to GHA UI annotations; ref: <https://help.github.com/en/actions/reference/workflow-commands-for-github-actions#setting-a-warning-message>
           # * note: `deno lint` returns UNC paths under WinOS (including Cygwin and MSys) requiring platform-specific PWD handling
           S=$(deno lint 2>&1) && printf "%s\n" "$S" || { printf "%s\n" "$S" | perl -ne 's/\x1b\[[0-9;]*[A-Za-z]//gim; print' | perl -ne 'BEGIN { $errs = q//; $_=$ENV{PWD}; if ($^O =~ m/Cygwin|MSWin32|MSys/i) { s#^/([A-Za-z])/#"//?/".uc($1).":/"#e; s#/#\\#g; } ; $PWD=$_; print qq{PWD=$PWD\n}; }; print; if (m/^Error\s+linting:\s+\Q$PWD\E[\\\/](.*)$/) { $errs .= qq{::error file=$1::ERROR: \`deno lint\`: linting error (file:\x27$1\x27; correct the syntax error)\n}; $file = q{}; } ; $error = $1 if /^([(].*)$/; ($errs .= qq{::error file=$1,line=$2::ERROR: \`deno lint\`: $error (file:\x27$1\x27, line:$2)\n}) if length($error) && m/\s*at\s+\Q$PWD\E[\\\/](.*):(\d+):\d+\s*$/; END { print qq/$errs/; }' ; exit 1 ; }
-
-  style_spellcheck:
-    name: Style/spelling
-    runs-on: ${{ matrix.job.os }}
-    strategy:
-      matrix:
-        job:
-          - { os: ubuntu-latest }
-    steps:
-      - uses: actions/checkout@v2
-      - name: Install/setup prerequisites
+      - name: 'Spell-check testing (`cspell`)'
+        if: success() || failure() # run regardless of prior step success/failure
         shell: bash
         run: |
-          ## Install/setup prerequisites
-          sudo apt-get -y update ; sudo apt-get -y install npm ; sudo npm install cspell -g ;
-      - name: Run `cspell`
-        shell: bash
-        run: |
-          ## Run `cspell`
+          ## Spell-check testing (`cspell`)
           cspell --config .vscode/cspell.json --no-summary --no-progress "**/*" ".github/**/*" | sed -E -n "s/${PWD//\//\\/}\/(.*):(.*):(.*) - (.*)/::error file=\1,line=\2,col=\3::ERROR: \4 (file:'\1', line:\2)/p"
 
   build:
@@ -255,7 +227,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: [build, style_deps, style_format, style_lint, style_spellcheck]
+    needs: [build, style]
     if: needs.build.outputs.DEPLOY
     runs-on: ${{ matrix.job.os }}
     strategy:
