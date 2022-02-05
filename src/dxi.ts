@@ -23,6 +23,7 @@ log.debug(`logging to *STDERR*`);
 
 // $me.warnIfImpaired((msg) => log.warn(msg)); // non-essential, so avoid for `dxi`; allows normal (non-warning) execution from installation via `deno install ...`
 log.trace({ $me });
+log.trace({ $version });
 log.trace('Deno', { execPath: Deno.execPath(), main: Deno.mainModule, denoArgs: Deno.args });
 
 const logLevelFromEnv = $logger.logLevelFromEnv() ?? (env('DEBUG') ? 'debug' : undefined);
