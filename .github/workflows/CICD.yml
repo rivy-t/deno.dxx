@@ -2,12 +2,12 @@ name: CICD
 
 # spell-checker:ignore (acronyms) CICD MSVC musl
 # spell-checker:ignore (env/flags) Awarnings BASHOPTS Ccodegen Coverflow Cpanic RUSTDOCFLAGS RUSTFLAGS Zpanic
-# spell-checker:ignore (jargon) SHAs deps softprops toolchain
+# spell-checker:ignore (jargon) deps dequote SHAs softprops subshell toolchain
 # spell-checker:ignore (names) CodeCOV Cygwin Deno DenoLand MacOS MinGW
 # spell-checker:ignore (people) Roy Ivy III * rivy
 # spell-checker:ignore (people) Dawid Dziurla * dawidd6 , Roy Ivy III * rivy
 # spell-checker:ignore (shell/tools) choco clippy dmake dpkg esac fakeroot gmake grcov halium lcov libssl mapfile mkdir popd printf pushd rustc rustfmt rustup shopt xargs
-# spell-checker:ignore (misc) aarch alnum armhf bindir busytest coreutils gnueabihf issuecomment maint nullglob onexitbegin onexitend runtest tempfile testsuite uutils
+# spell-checker:ignore (misc) aarch alnum armhf bindir busytest coreutils gnueabihf issuecomment maint nullglob onexitbegin onexitend pell runtest tempfile testsuite uutils
 
 env:
   PROJECT_NAME: dxx
@@ -93,7 +93,14 @@ jobs:
         shell: bash
         run: |
           ## Spell-check testing (`cspell`)
-          cspell --config .vscode/cspell.json --no-summary --no-progress "**/*" ".github/**/*" | sed -E -n "s/${PWD//\//\\/}\/(.*):(.*):(.*) - (.*)/::error file=\1,line=\2,col=\3::ERROR: \4 (file:'\1', line:\2)/p"
+          # * find cspell configuration ; note: avoid quotes around ${cfg_file} b/c `cspell` (v4) doesn't correctly dequote the config argument (or perhaps a subshell expansion issue?)
+          cfg_files=($(shopt -s nullglob ; echo {.vscode,.}/{,.}c[sS]pell{.json,.config{.js,.cjs,.json,.yaml,.yml},.yaml,.yml} ;))
+          cfg_file=${cfg_files[0]}
+          unset CSPELL_CFG_OPTION ; if [ -n "$cfg_file" ]; then CSPELL_CFG_OPTION="--config $cfg_file" ; fi
+          # * `cspell`
+          ## maint: [2021-11-10; rivy] the `--no-progress` option for `cspell` is a `cspell` v5+ option
+          # S=$(cspell ${CSPELL_CFG_OPTION} --no-summary --no-progress "**/*") && printf "%s\n" "$S" || { printf "%s\n" "$S" ; printf "%s" "$S" | sed -E -n "s/${PWD//\//\\/}\/(.*):(.*):(.*) - (.*)/::error file=\1,line=\2,col=\3::ERROR: \4 (file:'\1', line:\2)/p" ; exit 1 ; }
+          S=$(cspell ${CSPELL_CFG_OPTION} --no-summary "**/*") && printf "%s\n" "$S" || { printf "%s\n" "$S" ; printf "%s" "$S" | sed -E -n "s/${PWD//\//\\/}\/(.*):(.*):(.*) - (.*)/::error file=\1,line=\2,col=\3::ERROR: \4 (file:'\1', line:\2)/p" ; exit 1 ; }
 
   build:
     name: Build
