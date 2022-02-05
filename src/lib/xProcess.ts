@@ -247,9 +247,7 @@ export const haveSuppliedArgv0 = Boolean(
 
 // ref: [🐛/🙏🏻? ~ CLI apps need original command line (WinOS)](https://github.com/denoland/deno/issues/9871)
 /** * raw arguments are available for interpretation/expansion OR an "advanced" runner/shell is assumed to have already done correct argument expansion */
-export const haveEnhancedArgs = Boolean(
-	shim.ARGS ?? commandLineParts.scriptArgs ?? underEnhancedShell,
-);
+export const haveEnhancedArgs = Boolean(isEnhancedShimTarget || commandLine || underEnhancedShell);
 /** impaired '$0' and/or argument resolution, ie:
 - process name (eg, '$0') is not supplied and must be determined heuristically
 - and/or only *processed* arguments are available (via `Deno.args()`) which have *lost quote-context* and cannot distinguish `...` from `"..."`
