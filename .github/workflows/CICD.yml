@@ -16,7 +16,7 @@ env:
   #
   BIN_FILE_GLOB: './source/[^$]*.ts ./source/bin/*.ts ./source/cli/*.ts ./src/[^$]*.ts ./src/bin/*.ts ./src/cli/*.ts'
   LIB_FILE_GLOB: './source/$mod.ts ./source/lib/$mod.ts ./src/lib/$mod.ts ./src/$mod.ts'
-  SRC_FILE_GLOB: './source/**/*.ts ./src/**/*.ts'
+  # SRC_FILE_GLOB: './source/**/*.ts ./src/**/*.ts' ## note: double globstar not supported at CLI b/c MacOS includes only bash v3 which doesn't support double globstar
   #
   COMPILE_OPTIONS: '--allow-all --unstable'
 
@@ -122,72 +122,8 @@ jobs:
           ## Run `cspell`
           cspell --config .vscode/cspell.json --no-summary --no-progress "**/*" ".github/**/*" | sed -E -n "s/${PWD//\//\\/}\/(.*):(.*):(.*) - (.*)/::error file=\1,line=\2,col=\3::ERROR: \4 (file:'\1', line:\2)/p"
 
-  test:
-    name: Test
-    runs-on: ${{ matrix.job.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        job:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
-          - { os: macos-latest, target: x86_64-apple-darwin }
-          - { os: windows-latest, target: x86_64-pc-windows-msvc }
-    outputs:
-      ARTIFACTS: ${{ steps.vars.outputs.ARTIFACTS }}
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          fetch-depth: 0 # pull full repository (enables `git` branch/describe operations and testing)
-      - name: Initialize workflow variables
-        id: vars
-        shell: bash
-        run: |
-          ## VARs setup
-          outputs() { step_id="vars"; for var in "$@" ; do echo steps.${step_id}.outputs.${var}="${!var}"; echo ::set-output name=${var}::${!var}; done; }
-          # ...
-          # produces artifacts?
-          unset ARTIFACTS
-          # * array of "binary" files
-          # mapfile -t files < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do echo "$v"; done)
-          files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
-          echo "[ files: ${files[@]} ]"
-          if [ -n "${files}" ]; then ARTIFACTS='true' ; fi
-          outputs ARTIFACTS
-      - name: Install `deno` toolchain
-        uses: denoland/setup-deno@v1
-      - name: Info
-        shell: bash
-        run: |
-          ## Info
-          # environment
-          echo "## environment"
-          # ref: <https://www.baeldung.com/linux/find-current-shell> @@ <https://archive.is/poU3Z>
-          echo "SHELL='$(readlink /proc/$$/exe)'"
-          echo "BASH_VERSION='${BASH_VERSION}'"
-          echo "BASHOPTS='${BASHOPTS}'"
-          echo "CI='${CI}'"
-          # tooling info display
-          echo "## tooling"
-          deno --version
-          # dependencies
-          echo "## dependency list"
-          # * array of "binary" and "library" source files
-          # mapfile -t files < <(shopt -s nullglob; x=(${BIN_FILE_GLOB} ${LIB_FILE_GLOB}); for v in "${x[@]}"; do echo "$v"; done)
-          files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${BIN_FILE_GLOB} ${LIB_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
-          echo "[ files: ${files[@]} ]"
-          for file in "${files[@]}"; do
-            deno info "${file}"
-          done
-      - name: '`deno test`'
-        shell: bash
-        run: |
-          ## `deno test`
-          deno test --allow-all
-
-  publish:
-    name: Publish
-    needs: Test
-    if: needs.Test.outputs.ARTIFACTS
+  prove:
+    name: Test+Publish
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
@@ -232,7 +168,6 @@ jobs:
           # produces artifacts?
           unset ARTIFACTS
           # * array of "binary" files
-          # mapfile -t files < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do echo "$v"; done)
           files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
           echo "[ files: ${files[@]} ]"
           if [ -n "${files}" ]; then ARTIFACTS='true' ; fi
@@ -245,10 +180,8 @@ jobs:
           mkdir -p '${{ steps.vars.outputs.STAGING }}'
           mkdir -p '${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/bin'
       - name: Install `deno` toolchain
-        # if: steps.vars.outputs.ARTIFACTS
         uses: denoland/setup-deno@v1
       - name: Info
-        if: steps.vars.outputs.ARTIFACTS
         shell: bash
         run: |
           ## Info
@@ -264,20 +197,23 @@ jobs:
           deno --version
           # dependencies
           echo "## dependency list"
-          # * array of source files
-          # mapfile -t files < <(shopt -s nullglob; x=(${SRC_FILE_GLOB}); for v in "${x[@]}"; do echo "$v"; done)
-          files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${SRC_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
+          # * array of "binary" and "library" source files
+          files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${BIN_FILE_GLOB} ${LIB_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
           echo "[ files: ${files[@]} ]"
           for file in "${files[@]}"; do
             deno info "${file}"
           done
-      - name: Compile
-        # if: steps.vars.outputs.ARTIFACTS
+      - name: '`deno test`'
+        shell: bash
+        run: |
+          ## `deno test`
+          deno test --allow-all
+      - name: '`deno compile`'
+        if: steps.vars.outputs.ARTIFACTS
         shell: bash
         run: |
           ## Compile
           # * array of "binary" files
-          # mapfile -t files < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do echo "$v"; done)
           files=() ; while IFS= read -r line ; do files+=("${line}") ; done < <(shopt -s nullglob; x=(${BIN_FILE_GLOB}); for v in "${x[@]}"; do if test -f "$v"; then echo "$v" ; fi ; done)
           echo "[ files: ${files[@]} ]"
           for file in "${files[@]}"; do
@@ -288,15 +224,14 @@ jobs:
             # NOTE: a duplicate basename will overwrite any earlier compilation
             deno compile ${COMPILE_OPTIONS} -o "${target}" "${file}"
           done
-      - name: Archive artifacts
-        # if: steps.vars.outputs.ARTIFACTS
+      - name: Reserve artifacts # (ephemeral storage; for up to 90 days)
+        if: steps.vars.outputs.ARTIFACTS
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.PROJECT_NAME }}-${{ matrix.job.target }}
           path: ${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/bin/*
       - name: Package
-        # if: steps.vars.outputs.ARTIFACTS && steps.vars.outputs.DEPLOY
-        if: steps.vars.outputs.DEPLOY
+        if: steps.vars.outputs.ARTIFACTS && steps.vars.outputs.DEPLOY
         shell: bash
         run: |
           ## Package artifact(s)
@@ -314,8 +249,7 @@ jobs:
           esac
           popd >/dev/null
       - name: Publish
-        # if: steps.vars.outputs.ARTIFACTS && steps.vars.outputs.DEPLOY
-        if: steps.vars.outputs.DEPLOY
+        if: steps.vars.outputs.ARTIFACTS && steps.vars.outputs.DEPLOY
         uses: softprops/action-gh-release@v1
         with:
           files: |
