@@ -598,7 +598,7 @@ function v() {
 	return projectVersionText;
 }
 
-export const $version = { projectVersionText, projectVersionTextViaImport, v };
+export const $version = { versionURL, projectVersionText, projectVersionTextViaImport, v };
 
 //=== * logger
 
