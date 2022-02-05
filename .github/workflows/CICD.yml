@@ -5,6 +5,7 @@ name: CICD
 # spell-checker:ignore (jargon) SHAs deps softprops toolchain
 # spell-checker:ignore (names) CodeCOV Cygwin Deno DenoLand MacOS MinGW
 # spell-checker:ignore (people) Roy Ivy III * rivy
+# spell-checker:ignore (people) Dawid Dziurla * dawidd6 , Roy Ivy III * rivy
 # spell-checker:ignore (shell/tools) choco clippy dmake dpkg esac fakeroot gmake grcov halium lcov libssl mapfile mkdir popd printf pushd rustc rustfmt rustup shopt xargs
 # spell-checker:ignore (misc) aarch alnum armhf bindir busytest coreutils gnueabihf issuecomment maint nullglob onexitbegin onexitend runtest tempfile testsuite uutils
 
@@ -122,8 +123,8 @@ jobs:
           ## Run `cspell`
           cspell --config .vscode/cspell.json --no-summary --no-progress "**/*" ".github/**/*" | sed -E -n "s/${PWD//\//\\/}\/(.*):(.*):(.*) - (.*)/::error file=\1,line=\2,col=\3::ERROR: \4 (file:'\1', line:\2)/p"
 
-  prove:
-    name: Test+Publish
+  build:
+    name: Build
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
@@ -132,6 +133,9 @@ jobs:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
           - { os: macos-latest, target: x86_64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    outputs:
+      ARTIFACTS: ${{ steps.vars.outputs.ARTIFACTS }}
+      DEPLOY: ${{ steps.vars.outputs.DEPLOY }}
     steps:
       - uses: actions/checkout@v2
         with:
@@ -224,14 +228,8 @@ jobs:
             # NOTE: a duplicate basename will overwrite any earlier compilation
             deno compile ${COMPILE_OPTIONS} -o "${target}" "${file}"
           done
-      - name: Reserve artifacts # (ephemeral storage; for up to 90 days)
-        if: steps.vars.outputs.ARTIFACTS
-        uses: actions/upload-artifact@v2
-        with:
-          name: ${{ env.PROJECT_NAME }}-${{ matrix.job.target }}
-          path: ${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_BASENAME }}/bin/*
       - name: Package
-        if: steps.vars.outputs.ARTIFACTS && steps.vars.outputs.DEPLOY
+        if: steps.vars.outputs.ARTIFACTS
         shell: bash
         run: |
           ## Package artifact(s)
@@ -248,11 +246,73 @@ jobs:
             *) tar czf '../${{ steps.vars.outputs.PKG_NAME }}' * ;;
           esac
           popd >/dev/null
+      - name: Reserve artifacts # (ephemeral storage; for up to 90 days)
+        if: steps.vars.outputs.ARTIFACTS
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.PROJECT_NAME }}-${{ matrix.job.target }}
+          path: ${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_NAME }}
+
+  publish:
+    name: Publish
+    needs: [build, style_deps, style_format, style_lint, style_spellcheck]
+    if: needs.build.outputs.DEPLOY
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    steps:
+      - name: Initialize workflow variables
+        id: vars
+        shell: bash
+        run: |
+          ## VARs setup
+          outputs() { step_id="vars"; for var in "$@" ; do echo steps.${step_id}.outputs.${var}="${!var}"; echo ::set-output name=${var}::${!var}; done; }
+          # ...
+          # from 'build'
+          ARTIFACTS='${{ needs.build.outputs.ARTIFACTS }}'
+          DEPLOY='${{ needs.build.outputs.DEPLOY }}'
+          outputs ARTIFACTS DEPLOY
+          # staging directory
+          STAGING='.staging'
+          outputs STAGING
+          # determine EXE suffix
+          EXE_suffix="" ; case '${{ matrix.job.target }}' in *-pc-windows-*) EXE_suffix=".exe" ;; esac;
+          outputs EXE_suffix
+          # parse commit reference info
+          echo GITHUB_REF=${GITHUB_REF}
+          echo GITHUB_SHA=${GITHUB_SHA}
+          REF_NAME=${GITHUB_REF#refs/*/}
+          unset REF_BRANCH ; case "${GITHUB_REF}" in refs/heads/*) REF_BRANCH=${GITHUB_REF#refs/heads/} ;; esac;
+          unset REF_TAG ; case "${GITHUB_REF}" in refs/tags/*) REF_TAG=${GITHUB_REF#refs/tags/} ;; esac;
+          REF_SHAS=${GITHUB_SHA:0:8}
+          outputs REF_NAME REF_BRANCH REF_TAG REF_SHAS
+          # package name
+          PKG_suffix=".tar.gz" ; case '${{ matrix.job.target }}' in *-pc-windows-*) PKG_suffix=".zip" ;; esac;
+          PKG_BASENAME=${PROJECT_NAME}-${REF_TAG:-$REF_SHAS}-${{ matrix.job.target }}
+          PKG_NAME=${PKG_BASENAME}${PKG_suffix}
+          outputs PKG_suffix PKG_BASENAME PKG_NAME
+      - name: Create all needed build/work directories
+        if: steps.vars.outputs.ARTIFACTS
+        shell: bash
+        run: |
+          ## Create build/work space
+          mkdir -p '${{ steps.vars.outputs.STAGING }}'
+      - name: Retrieve artifacts
+        if: steps.vars.outputs.ARTIFACTS
+        uses: actions/download-artifact@v2
+        with:
+          name: '${{ env.PROJECT_NAME }}-${{ matrix.job.target }}'
+          path: '${{ steps.vars.outputs.STAGING }}'
       - name: Publish
         if: steps.vars.outputs.ARTIFACTS && steps.vars.outputs.DEPLOY
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            ${{ steps.vars.outputs.STAGING }}/${{ steps.vars.outputs.PKG_NAME }}
+            ${{ steps.vars.outputs.STAGING }}/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
