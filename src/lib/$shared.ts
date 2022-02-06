@@ -15,6 +15,7 @@ import * as $consoleSize from './consoleSize.ts';
 export const projectName: string | undefined = 'dxx';
 export const VERSION = '0.0.11';
 
+// FixME: revise `projectURL` for bundled/compiled scripts which are not embedded within surrounding projects, ie, where `projectURL` would be nonsensical
 export const projectURL = new URL('../..', import.meta.url); // note: `new URL('.', ...)` => dirname(...); `new URL('..', ...) => dirname(dirname(...))
 export const projectPath =
 	((url: URL) => (url.protocol === 'file:') ? $path.fromFileUrl(url) : url.pathname)(projectURL);
