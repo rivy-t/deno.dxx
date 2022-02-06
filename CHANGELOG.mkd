@@ -13,9 +13,41 @@
 
 ---
 
-## [0.0.11](https://github.com/rivy/deno.dxx/compare/v0.0.10...0.0.11) <small>(2022-01-25)</small>
+## [v0.0.12](https://github.com/rivy/deno.dxx/compare/v0.0.11...v0.0.12) <small>(2022-02-05)</small>
 
-<details open><summary><small><em>[0.0.11; details]</em></small></summary>
+<details open><summary><small><em>[v0.0.12; details]</em></small></summary>
+
+#### Changes
+
+* change *(version)*: add `versionURL` to $version data object &ac; [`4915749`](https://github.com/rivy/deno.dxx/commit/4915749645b4f908dcb6eabf35aea2bc092ef145)
+
+#### Fixes
+
+* fix *(version)*: revise version fetch method to be correct and more efficient &ac; [`c5bd988`](https://github.com/rivy/deno.dxx/commit/c5bd988e92344acdf9251242766a1b4d68cb24b2)
+* fix *(version)*: revise to directly imported VERSION instead of `fetch(...)` &ac; [`fb0ba70`](https://github.com/rivy/deno.dxx/commit/fb0ba706e8b72c6aad327d21c6758af8c2c9e52f)
+* fix *(xProcess)*: correct calculations of script-related variables and argument production &ac; [`3030eb6`](https://github.com/rivy/deno.dxx/commit/3030eb673b17f06cf2010ba29cc31b7a0f9fcfaf)
+
+#### Documentation
+
+* docs ~ add FixME for `projectURL` when bundled/compiled &ac; [`3104d2b`](https://github.com/rivy/deno.dxx/commit/3104d2ba801dac7f0b37b408021794539bc88bc3)
+
+#### Maintenance
+
+* maint *(CICD)*: fix style/spellcheck &ac; [`04203a0`](https://github.com/rivy/deno.dxx/commit/04203a013e64a4daf26b363f397048a9ad1cd712)
+* maint *(CICD)*: merge style tests into sub-jobs under 'Style' &ac; [`df11407`](https://github.com/rivy/deno.dxx/commit/df11407f9658d8751615ec988547710cadff57d2)
+* maint *(CICD)*: separate 'Publish' to ensure passing 'Style' and 'Build' before publishing &ac; [`19c7016`](https://github.com/rivy/deno.dxx/commit/19c7016ba1e416cdadd09a5456886204a7595982)
+* maint *(CICD)*: combine 'Test' and 'Publish' job workflows &ac; [`58c9d5c`](https://github.com/rivy/deno.dxx/commit/58c9d5cf1ed3d04119bcd264405170552b61291f)
+* maint *(CICD)*: expand CICD, add 'Build' and 'Publish' steps &ac; [`f56faa6`](https://github.com/rivy/deno.dxx/commit/f56faa6d567bcc0c983baa27f05e0f1c58d1a564)
+* maint *(dev)*: revise DPrint configuration (avoid examining coverage data) &ac; [`3ae88de`](https://github.com/rivy/deno.dxx/commit/3ae88dea6fd218d126f871260876bbdb73634926)
+* maint *(dev)*: add gitignore &ac; [`0ec3dd8`](https://github.com/rivy/deno.dxx/commit/0ec3dd83b13b8924c3950a022bd4daf2043d3343)
+
+</details>
+
+---
+
+## [v0.0.11](https://github.com/rivy/deno.dxx/compare/v0.0.10...v0.0.11) <small>(2022-01-25)</small>
+
+<details><summary><small><em>[v0.0.11; details]</em></small></summary>
 
 #### Fixes
 
