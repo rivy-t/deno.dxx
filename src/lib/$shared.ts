@@ -587,8 +587,12 @@ const versionURL = intoURL(projectLocations.version, projectURL);
 // logger.trace({ projectURL, projectLocations, versionURL });
 
 // projectVersionText == first non-empty line (EOL trimmed) from VERSION
-const projectVersionText = versionURL &&
-	(await (await fetch(versionURL)).text()).split(newline).filter((s) => s)[0];
+const projectVersionTextViaFetch =
+	(versionURL
+		? (fetch(versionURL).then((resp) => resp.ok ? resp.text() : undefined).then((text) =>
+			text?.split(newline).filter((s) => s)[0]
+		))
+		: Promise.resolve(undefined));
 
 // `import ...` implementation (note: requires project-level synchronization tooling)
 const projectVersionTextViaImport = VERSION;
@@ -597,7 +601,7 @@ function v() {
 	return projectVersionTextViaImport;
 }
 
-export const $version = { projectVersionText, projectVersionTextViaImport, v };
+export const $version = { projectVersionTextViaFetch, projectVersionTextViaImport, v };
 
 //=== * logger
 
