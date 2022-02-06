@@ -589,7 +589,7 @@ const versionURL = intoURL(projectLocations.version, projectURL);
 
 // projectVersionText == first non-empty line (EOL trimmed) from VERSION
 const projectVersionTextViaFetch =
-	(versionURL
+	await (versionURL
 		? (fetch(versionURL).then((resp) => resp.ok ? resp.text() : undefined).then((text) =>
 			text?.split(newline).filter((s) => s)[0]
 		))
